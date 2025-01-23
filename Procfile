@@ -1,0 +1,1 @@
+worker: python eski_kiyim_bot.py
