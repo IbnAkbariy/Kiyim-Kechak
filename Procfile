@@ -1,1 +1,1 @@
-worker: python eski_kiyim_bot.py
+worker: python main.0py
