@@ -1,4 +1,3 @@
-import logging
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import (
     Application,
@@ -6,147 +5,287 @@ from telegram.ext import (
     MessageHandler,
     ConversationHandler,
     ContextTypes,
-    filters,
+    filters
 )
+#import os
+#from datetime import datetime
+#import pytz
 
-# Bot uchun loglarni sozlash
-logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
+# Kanallar (o'zingizning kanal usernamalaringizni yozing)
+DONATIONS_CHANNEL = "-1002449977187"
+REQUESTS_CHANNEL = "-1002447315502"
 
-# Telegram kanal ID'si
-CHANNEL_ID1 = "-1002449977187"  # O'zingizning kanal ID'nizni kiriting
-CHANNEL_ID2 = "-1002447315502"
+# Suhbat holatlari
+(
+    MENU,
+    DONOR_NAME,
+    DONOR_PHONE,
+    DONOR_ADDRESS,
+    DONOR_DESCRIPTION,
+    DONOR_CONFIRM,
+    REQUESTER_NAME,
+    REQUESTER_PHONE,
+    REQUESTER_ADDRESS,
+    REQUESTER_DESCRIPTION,
+    REQUESTER_CONFIRM,
+) = range(11)
 
-# Qo'llaniladigan bo'limlar
-MENU, DONATE_NAME, DONATE_PHONE, DONATE_ADDRESS, HELP_NAME, HELP_PHONE, HELP_ADDRESS, HELP_NEED = range(8)
+# Admin IDlari (o'zingizning Telegram ID raqamingizni yozing)
+ADMIN_IDS = [123456789]
 
-# Boshlang'ich komandalar
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    keyboard = [["🧥 Kiyim topshirish", "🆘 Yordam so'rash"], ["ℹ️ Biz haqimizda"]]
-    await update.message.reply_text(
-        "Xush kelibsiz! Sizga qanday yordam bera olamiz?", reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Start komandasi"""
+    keyboard = [
+        ["🎁 Kiyim topshirish"],
+        ["🤲 Yordam so'rash"],
+        ["📞 Biz bilan aloqa"]
+    ]
+    if update.effective_user.id in ADMIN_IDS:
+        keyboard.append(["👨‍💼 Admin panel"])
+    
+    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+    
+    message = (
+        "Assalomu alaykum va rahmatullohi va barakatuh! 🌟\n\n"
+        "«Xayrli kiyimlar» loyihasiga xush kelibsiz!\n\n"
+        "Bu loyiha orqali siz o'zingizga ortiqcha bo'lgan kiyimlarni "
+        "muhtoj insonlarga yetkazishda ko'mak bera olasiz.\n\n"
+        "«Kim bir mo'minning dunyodagi g'amlaridan birini ketkazsa, "
+        "Alloh undan oxiratdagi g'amlaridan birini ketkazadi» (Hadis)\n\n"
+        "Quyidagi menyudan kerakli bo'limni tanlang:"
     )
+    
+    await update.message.reply_text(message, reply_markup=reply_markup)
     return MENU
 
-# "Biz haqimizda" bo'limi
-async def about(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+async def donate_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Kiyim topshirish jarayonini boshlash"""
     await update.message.reply_text(
-        "Biz eski yoki ortiqcha kiyimlarni muhtoj oilalarga yetkazish uchun yig'amiz.\n"
-        "Loyihamiz haqida ko'proq ma'lumot olish uchun bog'laning: @admin_username",
-        reply_markup=ReplyKeyboardMarkup([["🔙 Ortga"]], resize_keyboard=True),
+        "Iltimos, ismingizni kiriting:",
+        reply_markup=ReplyKeyboardRemove()
     )
+    return DONOR_NAME
+
+async def donor_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Kiyim topshiruvchining ismini saqlash"""
+    context.user_data['donor_name'] = update.message.text
+    await update.message.reply_text("Telefon raqamingizni kiriting (+998 formatida):")
+    return DONOR_PHONE
+
+async def donor_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Telefon raqamni tekshirish va saqlash"""
+    phone = update.message.text
+    if not phone.startswith("+998") or len(phone) != 13:
+        await update.message.reply_text("Iltimos, telefon raqamni to'g'ri formatda kiriting (+998xxxxxxxxx):")
+        return DONOR_PHONE
+    
+    context.user_data['donor_phone'] = phone
+    await update.message.reply_text("Manzilingizni kiriting:")
+    return DONOR_ADDRESS
+
+async def donor_address(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Manzilni saqlash"""
+    context.user_data['donor_address'] = update.message.text
+    await update.message.reply_text(
+        "Qanday yordam bermoqchi ekanligingiz haqida qisqacha ma'lumot bering:"
+    )
+    return DONOR_DESCRIPTION
+
+async def donor_description(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Kiyim topshirish tavsifini saqlash va tasdiqlash"""
+    context.user_data['donor_description'] = update.message.text
+    
+    confirm_message = (
+        "Iltimos, ma'lumotlaringizni tekshiring:\n\n"
+        f"👤 Ism: {context.user_data['donor_name']}\n"
+        f"📞 Telefon: {context.user_data['donor_phone']}\n"
+        f"📍 Manzil: {context.user_data['donor_address']}\n"
+        f"📄 Tavsif: {context.user_data['donor_description']}\n\n"
+        "Ma'lumotlar to'g'rimi?"
+    )
+    
+    keyboard = [["✅ Ha", "🔄 Qayta to'ldirish"]]
+    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+    
+    await update.message.reply_text(confirm_message, reply_markup=reply_markup)
+    return DONOR_CONFIRM
+
+async def donor_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Kiyim topshirish ma'lumotlarini tasdiqlash va kanalga yuborish"""
+    if update.message.text == "✅ Ha":
+        
+        # Kanalga yuborish uchun xabar tayyorlash
+        message = (
+            f"📝 Yangi kiyim topshirish arizasi \n\n"
+            f"👤 Ism: {context.user_data['donor_name']}\n"
+            f"📞 Telefon: {context.user_data['donor_phone']}\n"
+            f"📍 Manzil: {context.user_data['donor_address']}\n"
+            f"📄 Tavsif: {context.user_data['donor_description']}"
+        )
+        
+        # Kanalga yuborish
+        await context.bot.send_message(chat_id=DONATIONS_CHANNEL, text=message)
+        
+        # Foydalanuvchiga tasdiqlash xabari
+        keyboard = [["🏠 Asosiy menyu"]]
+        reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+        
+        await update.message.reply_text(
+            "✅ Sizning arizangiz qabul qilindi!\n\n"
+            "Tez orada siz bilan bog'lanamiz.",
+            reply_markup=reply_markup
+        )
+        return MENU
+    
+    elif update.message.text == "🔄 Qayta to'ldirish":
+        return await donate_start(update, context)
+
+async def request_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Yordam so'rash jarayonini boshlash"""
+    await update.message.reply_text(
+        "Iltimos, ismingizni kiriting:",
+        reply_markup=ReplyKeyboardRemove()
+    )
+    return REQUESTER_NAME
+
+async def requester_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Yordam so'rovchining ismini saqlash"""
+    context.user_data['requester_name'] = update.message.text
+    await update.message.reply_text("Telefon raqamingizni kiriting (+998 formatida):")
+    return REQUESTER_PHONE
+
+async def requester_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Telefon raqamni tekshirish va saqlash"""
+    phone = update.message.text
+    if not phone.startswith("+998") or len(phone) != 13:
+        await update.message.reply_text("Iltimos, telefon raqamni to'g'ri formatda kiriting (+998xxxxxxxxx):")
+        return REQUESTER_PHONE
+    
+    context.user_data['requester_phone'] = phone
+    await update.message.reply_text("Manzilingizni kiriting:")
+    return REQUESTER_ADDRESS
+
+async def requester_address(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Manzilni saqlash"""
+    context.user_data['requester_address'] = update.message.text
+    await update.message.reply_text(
+        "Qanday yordam kerak ekanligini qisqacha yozing:"
+    )
+    return REQUESTER_DESCRIPTION
+
+async def requester_description(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Yordam so'rash tavsifini saqlash va tasdiqlash"""
+    context.user_data['requester_description'] = update.message.text
+    
+    confirm_message = (
+        "Iltimos, ma'lumotlaringizni tekshiring:\n\n"
+        f"👤 Ism: {context.user_data['requester_name']}\n"
+        f"📞 Telefon: {context.user_data['requester_phone']}\n"
+        f"📍 Manzil: {context.user_data['requester_address']}\n"
+        f"📄 Tavsif: {context.user_data['requester_description']}\n\n"
+        "Ma'lumotlar to'g'rimi?"
+    )
+    
+    keyboard = [["✅ Ha", "🔄 Qayta to'ldirish"]]
+    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+    
+    await update.message.reply_text(confirm_message, reply_markup=reply_markup)
+    return REQUESTER_CONFIRM
+
+async def requester_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Yordam so'rash ma'lumotlarini tasdiqlash va kanalga yuborish"""
+    if update.message.text == "✅ Ha":
+
+        # Kanalga yuborish uchun xabar tayyorlash
+        message = (
+            f"📝 Yangi yordam so'rovi \n\n"
+            f"👤 Ism: {context.user_data['requester_name']}\n"
+            f"📞 Telefon: {context.user_data['requester_phone']}\n"
+            f"📍 Manzil: {context.user_data['requester_address']}\n"
+            f"📄 Tavsif: {context.user_data['requester_description']}"
+        )
+        
+        # Kanalga yuborish
+        await context.bot.send_message(chat_id=REQUESTS_CHANNEL, text=message)
+        
+        # Foydalanuvchiga tasdiqlash xabari
+        keyboard = [["🏠 Asosiy menyu"]]
+        reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+        
+        await update.message.reply_text(
+            "✅ Sizning so'rovingiz qabul qilindi!\n\n"
+            "Tez orada siz bilan bog'lanamiz.",
+            reply_markup=reply_markup
+        )
+        return MENU
+    
+    elif update.message.text == "🔄 Qayta to'ldirish":
+        return await request_start(update, context)
+
+async def contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Aloqa ma'lumotlarini ko'rsatish"""
+    keyboard = [["🏠 Asosiy menyu"]]
+    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+    
+    contact_info = (
+        "📞 Biz bilan bog'lanish:\n\n"
+        "☎️ Telefon: +998939077440\n"
+        "📱 Telegram: @EskiKiyim_Admin\n"
+    )
+    
+    await update.message.reply_text(contact_info, reply_markup=reply_markup)
     return MENU
 
-# Kiyim topshirish jarayoni
-async def donate_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    await update.message.reply_text("Ismingizni kiriting:")
-    return DONATE_NAME
-
-async def donate_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    context.user_data["donate_name"] = update.message.text
-    await update.message.reply_text("Telefon raqamingizni kiriting:")
-    return DONATE_PHONE
-
-async def donate_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    context.user_data["donate_phone"] = update.message.text
-    await update.message.reply_text("Manzilingizni kiriting:")
-    return DONATE_ADDRESS
-
-async def donate_address(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    context.user_data["donate_address"] = update.message.text
-    donation = {
-        "name": context.user_data["donate_name"],
-        "phone": context.user_data["donate_phone"],
-        "address": context.user_data["donate_address"],
-    }
-
-    # Telegram kanalga yuboriladigan xabar
-    message = (
-        f"🧥 Yangi kiyim topshirish arizasi\n"
-        f"📛 Ism: {donation['name']}\n"
-        f"📞 Telefon: {donation['phone']}\n"
-        f"📍 Manzil: {donation['address']}"
-    )
-    await context.bot.send_message(chat_id=CHANNEL_ID1, text=message)
-
+async def admin_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin xabar tarqatish"""
+    if update.effective_user.id not in ADMIN_IDS:
+        return MENU
+    
     await update.message.reply_text(
-        "Rahmat! Sizning arizangiz qabul qilindi. Tez orada biz siz bilan bog'lanamiz!", reply_markup=ReplyKeyboardRemove()
+        "Barcha foydalanuvchilarga yubormoqchi bo'lgan xabaringizni kiriting:",
+        reply_markup=ReplyKeyboardMarkup([["🏠 Asosiy menyu"]], resize_keyboard=True)
     )
-    return ConversationHandler.END
-
-# Yordam so'rash jarayoni
-async def help_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    await update.message.reply_text("Ismingizni kiriting:")
-    return HELP_NAME
-
-async def help_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    context.user_data["help_name"] = update.message.text
-    await update.message.reply_text("Telefon raqamingizni kiriting:")
-    return HELP_PHONE
-
-async def help_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    context.user_data["help_phone"] = update.message.text
-    await update.message.reply_text("Manzilingizni kiriting:")
-    return HELP_ADDRESS
-
-async def help_address(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    context.user_data["help_address"] = update.message.text
-    await update.message.reply_text("Sizga qanday yordam kerakligi haqida qisqacha yoza olasizmi ?:")
-    return HELP_NEED
-
-async def help_need(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    context.user_data["help_need"] = update.message.text
-    help_request = {
-        "name": context.user_data["help_name"],
-        "phone": context.user_data["help_phone"],
-        "address": context.user_data["help_address"],
-        "need": context.user_data["help_need"],
-    }
-
-    # Telegram kanalga yuboriladigan xabar
-    message = (
-        f"🆘 Yangi yordam so'rov arizasi\n"
-        f"📛 Ism: {help_request['name']}\n"
-        f"📞 Telefon: {help_request['phone']}\n"
-        f"📍 Manzil: {help_request['address']}\n"
-        f"🤲 Yordam turi: {help_request['need']}"
+    return MENU
+def main():
+    """Botni ishga tushirish"""
+    # Application yaratish
+    application = (
+        Application.builder()
+        .token("8138020813:AAGsSC1asCt0mTz-0VwlEFTyRyj0t9uFyC8")  # Bot tokenini yozing
+        .build()
     )
-    await context.bot.send_message(chat_id=CHANNEL_ID2, text=message)
-
-    await update.message.reply_text(
-        "Rahmat! Sizning arizangiz qabul qilindi. Biz tez orada siz bilan bog'lanamiz!", reply_markup=ReplyKeyboardRemove()
-    )
-    return ConversationHandler.END
-
-# Ortga qaytish funksiyasi
-async def back_to_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    return await start(update, context)
-
-# Asosiy funksiya
-def main() -> None:
-    application = Application.builder().token("8138020813:AAGsSC1asCt0mTz-0VwlEFTyRyj0t9uFyC8").build()
-
-    conversation_handler = ConversationHandler(
+    
+    # Suhbat holatlarini boshqaruvchi handler
+    conv_handler = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
         states={
             MENU: [
-                MessageHandler(filters.Regex("^🧥 Kiyim topshirish$"), donate_start),
-                MessageHandler(filters.Regex("^🆘 Yordam so'rash$"), help_start),
-                MessageHandler(filters.Regex("^ℹ️ Biz haqimizda$"), about),
-                MessageHandler(filters.Regex("^🔙 Ortga$"), back_to_menu),
+                MessageHandler(filters.Regex("^🎁 Kiyim topshirish$"), donate_start),
+                MessageHandler(filters.Regex("^🤲 Yordam so'rash$"), request_start),
+                MessageHandler(filters.Regex("^📞 Biz bilan aloqa$"), contact),
+                MessageHandler(filters.Regex("^👨‍💼 Admin panel$"), admin_broadcast),
             ],
-            DONATE_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, donate_name)],
-            DONATE_PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, donate_phone)],
-            DONATE_ADDRESS: [MessageHandler(filters.TEXT & ~filters.COMMAND, donate_address)],
-            HELP_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, help_name)],
-            HELP_PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, help_phone)],
-            HELP_ADDRESS: [MessageHandler(filters.TEXT & ~filters.COMMAND, help_address)],
-            HELP_NEED: [MessageHandler(filters.TEXT & ~filters.COMMAND, help_need)],
+            DONOR_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, donor_name)],
+            DONOR_PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, donor_phone)],
+            DONOR_ADDRESS: [MessageHandler(filters.TEXT & ~filters.COMMAND, donor_address)],
+            DONOR_DESCRIPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, donor_description)],
+            DONOR_CONFIRM: [MessageHandler(filters.Regex("^(✅ Ha|🔄 Qayta to'ldirish)$"), donor_confirm)],
+            
+            REQUESTER_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, requester_name)],
+            REQUESTER_PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, requester_phone)],
+            REQUESTER_ADDRESS: [MessageHandler(filters.TEXT & ~filters.COMMAND, requester_address)],
+            REQUESTER_DESCRIPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, requester_description)],
+            REQUESTER_CONFIRM: [MessageHandler(filters.Regex("^(✅ Ha|🔄 Qayta to'ldirish)$"), requester_confirm)],
         },
-        fallbacks=[CommandHandler("start", start)],
+        fallbacks=[MessageHandler(filters.Regex("^🏠 Asosiy menyu$"), start)],
     )
-
-    application.add_handler(conversation_handler)
+    
+    # Handlerni ro'yxatga olish
+    application.add_handler(conv_handler)
+    
+    # Botni ishga tushirish
     application.run_polling()
-
+  
 if __name__ == "__main__":
     main()
